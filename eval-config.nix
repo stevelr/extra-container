@@ -41,13 +41,25 @@ let
       networking.extraHosts = dummy;
       networking.proxy.envVars = optionValue {};
       nix.package = optionValue pkgs.nix;
-      security = dummy;
+      # `security` and `services.logrotate` were previously declared as
+      # leaf dummies. Newer nixpkgs `systemd.nix` writes to
+      # `security.pam.services` and `services.logrotate.settings`, which
+      # requires those paths to be submodule prefixes — so declare the
+      # specific child options instead. (See issue #40.)
+      security.polkit.enable = optionValue false;
+      security.pam.services = optionValue {};
       services = {
         dbus = dummy;
-        logrotate = dummy;
+        logrotate.settings = optionValue {};
         udev = dummy;
         rsyslogd.enable = optionValue false;
         syslog-ng.enable = optionValue false;
+        # systemd.nix's `sshd-vsock@` unit (added for systemd-vmspawn)
+        # references config.services.openssh.{enable,package}.
+        openssh = {
+          enable = optionValue false;
+          package = optionValue pkgs.openssh;
+        };
       };
       system.activationScripts = dummy;
       system.fsPackages = dummy;
@@ -56,8 +68,15 @@ let
       system.path = optionValue "";
       system.requiredKernelConfig = dummy;
       system.stateVersion = optionValue (if legacyInstallDirs then "21.11" else "22.05");
+      # `system.etc.overlay.enable` is declared by newer nixpkgs's etc.nix
+      # (already in baseModules), so it does not need a dummy here.
+      # Default to `pkgs.systemd` rather than `pkgs.nixos-init` so this
+      # remains valid against older nixpkgs that predate the nixos-init
+      # split. The body that reads it is gated on `system.etc.overlay`.
+      system.nixos-init.package = optionValue pkgs.systemd;
       systemd.oomd = dummy;
       systemd.user.generators = optionValue {};
+      time.timeZone = optionValue null;
       ids.gids.keys = dummy;
       ids.uids.systemd-coredump = dummy;
       ids.gids.systemd-journal = dummy;
@@ -80,6 +99,7 @@ let
       users.groups.keys.gid = dummy;
       users.groups.systemd-journal.gid = dummy;
       users.groups.systemd-journal-gateway.gid = dummy;
+      users.groups.utmp.name = optionValue "utmp";
     };
 
     config = {

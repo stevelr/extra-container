@@ -1,3 +1,15 @@
+# 0.15 (2026-04-28)
+- Fixes
+  - Declare additional dummy options in `eval-config.nix` so containers
+    evaluate cleanly against current `nixpkgs-unstable`. Newer
+    `nixos/modules/system/boot/systemd.nix` references
+    `services.openssh.{enable,package}` (for the `sshd-vsock@`
+    systemd-vmspawn unit), `security.polkit.enable`,
+    `security.pam.services`, `services.logrotate.settings`,
+    `system.nixos-init.package`, `time.timeZone`, and
+    `users.groups.utmp.name` at the outer eval level. Replaces the
+    leaf-typed `security` and `services.logrotate` dummies with their
+    specific child paths so submodule writes are accepted. Fixes #40.
 # 0.14 (2025-12-19)
 - Enhancements
   - Support NixOS unstable
