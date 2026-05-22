@@ -36,6 +36,8 @@ let
       boot.kernelParams = dummy;
       boot.loader.systemd-boot.bootCounting.enable = optionValue false;
       environment.systemPackages = dummy;
+      environment.variables = optionValue {};
+      i18n.imperativeLocale = optionValue false;
       networking.dhcpcd.denyInterfaces = dummy;
       networking.hosts = dummy;
       networking.extraHosts = dummy;
