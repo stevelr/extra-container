@@ -4,67 +4,96 @@
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 
-  outputs = { self, nixpkgs, flake-utils }@inputs:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+    }@inputs:
     let
-      supportedSystems = [ "x86_64-linux" "i686-linux" "aarch64-linux" ];
+      supportedSystems = [
+        "x86_64-linux"
+        "i686-linux"
+        "aarch64-linux"
+      ];
       eachSupportedSystem = flake-utils.lib.eachSystem supportedSystems;
       pkg = pkgs: pkgs.callPackage ./. { pkgSrc = ./.; };
     in
     {
-      nixosModules.default = { pkgs, ... }: {
-        environment.systemPackages = [ (pkg pkgs) ];
-        boot.extraSystemdUnitPaths = [ "/etc/systemd-mutable/system" ];
-      };
+      nixosModules.default =
+        { pkgs, ... }:
+        {
+          environment.systemPackages = [ (pkg pkgs) ];
+          boot.extraSystemdUnitPaths = [ "/etc/systemd-mutable/system" ];
+        };
 
       overlays.default = final: prev: { extra-container = pkg final; };
 
       lib = {
         inherit supportedSystems eachSupportedSystem;
 
-        buildContainers = {
-          system
-          , config
-          , nixpkgs ? inputs.nixpkgs
-          , legacyInstallDirs ? false
-          , addRunner ? true
-        }: let
-          containers = self.lib.evalContainers { inherit system config nixpkgs legacyInstallDirs; };
-          etc = containers.config.system.build.etc;
-          withRunner = etc.overrideAttrs (old: {
-            name = "container";
-            buildCommand = old.buildCommand + "\n" + ''
-              install -D -m700 <(printf '${''
-                #!/usr/bin/env bash
-                if ! type -p extra-container >/dev/null; then
-                  >&2 echo "Error: extra-container is not installed"
-                  >&2 echo "Docs: https://github.com/erikarvstedt/extra-container?tab=readme-ov-file#install"
-                  exit 1
-                fi
-                EXTRA_CONTAINER_ETC=%s exec extra-container "$@"
-              ''}' "$out") $out/bin/container
-            '';
-          });
-        in
-          (if addRunner then withRunner else etc) // {
+        buildContainers =
+          {
+            system,
+            config,
+            nixpkgs ? inputs.nixpkgs,
+            legacyInstallDirs ? false,
+            addRunner ? true,
+          }:
+          let
+            containers = self.lib.evalContainers {
+              inherit
+                system
+                config
+                nixpkgs
+                legacyInstallDirs
+                ;
+            };
+            etc = containers.config.system.build.etc;
+            withRunner = etc.overrideAttrs (old: {
+              name = "container";
+              buildCommand =
+                old.buildCommand
+                + "\n"
+                + ''
+                  install -D -m700 <(printf '${''
+                    #!/usr/bin/env bash
+                    if ! type -p extra-container >/dev/null; then
+                      >&2 echo "Error: extra-container is not installed"
+                      >&2 echo "Docs: https://github.com/erikarvstedt/extra-container?tab=readme-ov-file#install"
+                      exit 1
+                    fi
+                    EXTRA_CONTAINER_ETC=%s exec extra-container "$@"
+                  ''}' "$out") $out/bin/container
+                '';
+            });
+          in
+          (if addRunner then withRunner else etc)
+          // {
             inherit (containers) config;
             inherit (containers.config) containers;
           };
 
-        evalContainers = {
-          system
-          , config
-          , nixpkgs ? inputs.nixpkgs
-          , legacyInstallDirs ? false
-        }: import ./eval-config.nix {
-          inherit
-            system
-            legacyInstallDirs;
-          nixosPath = nixpkgs + "/nixos";
-          systemConfig = config;
-        };
+        evalContainers =
+          {
+            system,
+            config,
+            nixpkgs ? inputs.nixpkgs,
+            legacyInstallDirs ? false,
+          }:
+          import ./eval-config.nix {
+            inherit
+              system
+              legacyInstallDirs
+              ;
+            nixosPath = nixpkgs + "/nixos";
+            systemConfig = config;
+          };
       };
 
-    } // (eachSupportedSystem (system:
+    }
+    // (eachSupportedSystem (
+      system:
       let
         pkgs = import nixpkgs { inherit system; };
         inherit (nixpkgs) lib;
@@ -75,53 +104,62 @@
         # This dev shell allows running the `extra-container` command directly from the local
         # source (./extra-container), for quick edit/test cycles.
         # This only works when `nix develop` is started from the repo root directory.
-        devShells.default = let
-          # Extra PATH, as defined in ./default.nix
-          path = lib.makeBinPath (with pkgs; [
-            openssh
-          ]);
-        in pkgs.stdenv.mkDerivation {
-          name = "shell";
+        devShells.default =
+          let
+            # Extra PATH, as defined in ./default.nix
+            path = lib.makeBinPath (
+              with pkgs;
+              [
+                openssh
+              ]
+            );
+          in
+          pkgs.stdenv.mkDerivation {
+            name = "shell";
 
-          shellHook =  ''
-            PATH="${path}''${PATH:+:}$PATH"
+            shellHook = ''
+              PATH="${path}''${PATH:+:}$PATH"
 
-            # Enable calling the local source (./extra-container) with command `extra-container`
-            PATH="$(realpath .):$PATH"
+              # Enable calling the local source (./extra-container) with command `extra-container`
+              PATH="$(realpath .):$PATH"
 
-            # Use the pinned nixpkgs for building containers when running `extra-container`
-            export NIX_PATH="nixpkgs=${nixpkgs}''${NIX_PATH:+:}$NIX_PATH"
+              # Use the pinned nixpkgs for building containers when running `extra-container`
+              export NIX_PATH="nixpkgs=${nixpkgs}''${NIX_PATH:+:}$NIX_PATH"
 
-            # See comment in ./extra-container for an explanation
-            export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
-          '';
-        };
+              # See comment in ./extra-container for an explanation
+              export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
+            '';
+          };
 
         packages = {
           # Run a basic extra-container test in a NixOS VM
           test = pkgs.testers.nixosTest {
             name = "extra-container";
 
-            nodes.machine = { config, ... }: {
-              imports = [ self.nixosModules.default ];
-              # memorySize = 1024 needed for evaluating the container system
-              # memorySize = 1200 needed to avoid error during boot:
-              #   'agetty[817]: failed to open credentials directory'
-              virtualisation.memorySize = 1200;
-              nix.nixPath = [ "nixpkgs=${nixpkgs}" ];
-              system.stateVersion = config.system.nixos.release;
-              # Pre-build the container used by testScript
-              system.extraDependencies = let
-                basicContainer = import ./eval-config.nix {
-                  nixosPath = "${nixpkgs}/nixos";
-                  legacyInstallDirs = false;
-                  inherit system;
-                  systemConfig = {
-                    containers.test.config.environment.etc.testFile.text = "testSuccess";
-                  };
-                };
-              in [ basicContainer.config.system.build.etc ];
-            };
+            nodes.machine =
+              { config, ... }:
+              {
+                imports = [ self.nixosModules.default ];
+                # memorySize = 1024 needed for evaluating the container system
+                # memorySize = 1200 needed to avoid error during boot:
+                #   'agetty[817]: failed to open credentials directory'
+                virtualisation.memorySize = 1200;
+                nix.nixPath = [ "nixpkgs=${nixpkgs}" ];
+                system.stateVersion = config.system.nixos.release;
+                # Pre-build the container used by testScript
+                system.extraDependencies =
+                  let
+                    basicContainer = import ./eval-config.nix {
+                      nixosPath = "${nixpkgs}/nixos";
+                      legacyInstallDirs = false;
+                      inherit system;
+                      systemConfig = {
+                        containers.test.config.environment.etc.testFile.text = "testSuccess";
+                      };
+                    };
+                  in
+                  [ basicContainer.config.system.build.etc ];
+              };
 
             testScript = ''
               config = '{ containers.test.config.environment.etc.testFile.text = "testSuccess"; }'
@@ -134,33 +172,45 @@
           };
 
           # Used by apps.vm
-          vm = (import "${nixpkgs}/nixos" {
-            inherit system;
-            configuration = { config, pkgs, lib, modulesPath, ... }: with lib; {
-              imports = [
-                self.nixosModules.default
-                "${modulesPath}/virtualisation/qemu-vm.nix"
-              ];
-              virtualisation.graphics = false;
-              services.getty.autologinUser = "root";
-              nix.nixPath = [ "nixpkgs=${nixpkgs}" ];
-              system.stateVersion = config.system.nixos.release;
-              documentation.enable = false;
-              # Power off VM when the user exits the shell
-              systemd.services."serial-getty@".preStop = ''
-                echo o >/proc/sysrq-trigger
-              '';
-              # Pre-build a minimal container
-              system.extraDependencies = let
-                basicContainer = import ./eval-config.nix {
-                  nixosPath = "${nixpkgs}/nixos";
-                  legacyInstallDirs = false;
-                  inherit system;
-                  systemConfig = {};
+          vm =
+            (import "${nixpkgs}/nixos" {
+              inherit system;
+              configuration =
+                {
+                  config,
+                  pkgs,
+                  lib,
+                  modulesPath,
+                  ...
+                }:
+                with lib;
+                {
+                  imports = [
+                    self.nixosModules.default
+                    "${modulesPath}/virtualisation/qemu-vm.nix"
+                  ];
+                  virtualisation.graphics = false;
+                  services.getty.autologinUser = "root";
+                  nix.nixPath = [ "nixpkgs=${nixpkgs}" ];
+                  system.stateVersion = config.system.nixos.release;
+                  documentation.enable = false;
+                  # Power off VM when the user exits the shell
+                  systemd.services."serial-getty@".preStop = ''
+                    echo o >/proc/sysrq-trigger
+                  '';
+                  # Pre-build a minimal container
+                  system.extraDependencies =
+                    let
+                      basicContainer = import ./eval-config.nix {
+                        nixosPath = "${nixpkgs}/nixos";
+                        legacyInstallDirs = false;
+                        inherit system;
+                        systemConfig = { };
+                      };
+                    in
+                    [ basicContainer.config.system.build.etc ];
                 };
-              in [ basicContainer.config.system.build.etc ];
-            };
-          }).config.system.build.vm;
+            }).config.system.build.vm;
 
           runVM = pkgs.writers.writeBash "run-vm" ''
             set -euo pipefail

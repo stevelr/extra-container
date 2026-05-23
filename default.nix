@@ -1,5 +1,10 @@
-{ stdenv, lib, nixos-container, openssh, glibcLocales
-, pkgSrc ? lib.cleanSource ./.
+{
+  stdenv,
+  lib,
+  nixos-container,
+  openssh,
+  glibcLocales,
+  pkgSrc ? lib.cleanSource ./.,
 }:
 
 stdenv.mkDerivation rec {

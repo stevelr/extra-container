@@ -3,7 +3,8 @@
   inputs.extra-container.url = "github:erikarvstedt/extra-container";
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
-  outputs = { extra-container, ... }@inputs:
+  outputs =
+    { extra-container, ... }@inputs:
     extra-container.lib.eachSupportedSystem (system: {
       packages.default = extra-container.lib.buildContainers {
         # The system of the container host
@@ -28,17 +29,19 @@
             # This is useful for importing flakes from modules (see nixpkgs/lib/modules.nix).
             # specialArgs = { inherit inputs; };
 
-            config = { pkgs, ... }: {
-              systemd.services.hello = {
-                wantedBy = [ "multi-user.target" ];
-                script = ''
-                  while true; do
-                    echo hello | ${pkgs.netcat}/bin/nc -lN 50
-                  done
-                '';
+            config =
+              { pkgs, ... }:
+              {
+                systemd.services.hello = {
+                  wantedBy = [ "multi-user.target" ];
+                  script = ''
+                    while true; do
+                      echo hello | ${pkgs.netcat}/bin/nc -lN 50
+                    done
+                  '';
+                };
+                networking.firewall.allowedTCPPorts = [ 50 ];
               };
-              networking.firewall.allowedTCPPorts = [ 50 ];
-            };
           };
         };
       };
