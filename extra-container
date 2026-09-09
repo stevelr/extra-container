@@ -252,7 +252,7 @@ buildContainers() {
     if [[ $attr ]]; then
         attrExpr=".\${''$attr''}"
     fi
-    NIX_PATH=$NIX_PATH:pwd=$PWD nix-build --out-link $tmpDir/result "${buildArgs[@]}" -E \
+    NIX_PATH=$NIX_PATH:pwd=$PWD nix-build --out-link "$tmpDir/result" "${buildArgs[@]}" -E \
     " let cfg = ($containerCfg)$attrExpr;
       in (import $evalConfig {
          nixosPath = $nixosPath;
@@ -263,55 +263,71 @@ buildContainers() {
 }
 
 restartContainers() {
-    local services=$(getServiceNames $*)
+    local services
+    mapfile -t services < <(getServiceNames "$@")
 
     # `systemctl restart <container>` is broken (https://github.com/NixOS/nixpkgs/issues/43652),
-    # so use a workaraound
-    systemctl stop $services
-    # Retry terminating the container machines until the command succeeds
-    # or the machines have disappeared
+    # so use a workaround
+    systemctl stop "${services[@]}"
+    # A stopped machine may already be unregistered. Check the machine list
+    # instead of depending on version-specific, translated error messages.
+    local i output machines machine _details container pending
     for ((i = 1;; i++)); do
-        local failed=
-        local output
-        output=$(machinectl terminate $* 2>&1) || failed=1
-        if [[ ! $failed || $output == *no*machine*known* ]]; then
+        if output=$(machinectl terminate "$@" 2>&1); then
             break
         fi
-        echo $output
+        if ! machines=$(machinectl list --no-legend --no-pager --full); then
+            errEcho "$output"
+            errEcho "Failed to query remaining container machines."
+            return 1
+        fi
+        pending=
+        while read -r machine _details; do
+            for container in "$@"; do
+                if [[ $machine == "$container" ]]; then
+                    pending=1
+                fi
+            done
+        done <<< "$machines"
+        if [[ ! $pending ]]; then
+            break
+        fi
+        errEcho "$output"
         if ((i == 20)); then
             errEcho "Failed to stop containers."
             exit 1
         fi
-        sleep 0.001
+        sleep 0.1
     done
-    systemctl start $services
+    systemctl start "${services[@]}"
 }
 
 updateContainers() {
-    for container in $*; do
+    for container in "$@"; do
         local confFile=$configDirectory/$container.conf
-        local systemPath=$(grep -ohP "(?<=^SYSTEM_PATH=).*" $confFile)
+        local systemPath
+        systemPath=$(grep -ohP "(?<=^SYSTEM_PATH=).*" "$confFile")
         # Shift output 2 spaces to the right
         echo "  Updating $container"
-        nixos-container run $container -- bash -lc "${systemPath}/bin/switch-to-configuration test" |& sed 's/^/  /' || true
+        nixos-container run "$container" -- bash -lc "${systemPath}/bin/switch-to-configuration test" |& sed 's/^/  /' || true
         echo
     done
 }
 
 getContainers() {
-    for service in $mutableServicesDir/container@?*.service; do
-        getContainerName $service
+    for service in "$mutableServicesDir"/container@?*.service; do
+        getContainerName "$service"
     done
 }
 
 getContainerName() {
     [[ $1 =~ container@(.+)\.service ]]
-    echo ${BASH_REMATCH[1]}
+    echo "${BASH_REMATCH[1]}"
 }
 
 getServiceNames() {
-    for container in $*; do
-        echo "container@$container.service "
+    for container in "$@"; do
+        printf 'container@%s.service\n' "$container"
     done
 }
 
@@ -320,7 +336,7 @@ makeGCRootsPath() {
     # stale links in per-user are not automatically removed.
     # This avoids cluttering the gcroots dir in case containers
     # are manually removed.
-    echo /nix/var/nix/gcroots/auto/extra-container-$1
+    echo /nix/var/nix/gcroots/auto/extra-container-"$1"
 }
 
 # The key is reused between extra-container sessions
@@ -385,7 +401,7 @@ getContainersFromDefinition() {
     forceDestroy=
 
     args=()
-    while [[ $# > 0 ]]; do
+    while [[ $# -gt 0 ]]; do
         arg="$1"
         shift
         case $arg in
@@ -420,7 +436,7 @@ getContainersFromDefinition() {
             --build-args)
                 buildArgs=()
                 # Add all following args until --run
-                while [[ $# > 0 && $1 != --run ]]; do
+                while [[ $# -gt 0 && $1 != --run ]]; do
                     buildArgs+=("$1")
                     shift
                 done
@@ -447,7 +463,7 @@ getContainersFromDefinition() {
         arg=${1:-}
         shift || true
     fi
-    if [[ $# > 0 ]]; then
+    if [[ $# -gt 0 ]]; then
         errEcho "Error: Unhandled arguments: $*"
         exit 1
     fi
@@ -484,7 +500,7 @@ getContainersFromDefinition() {
                     errEcho "Reading container config from STDIN is not supported for command 'shell'"
                     exit 1
                 fi
-                read -d '' containerExpr || true
+                read -r -d '' containerExpr || true
             else
                 containerExpr="import ''$(realpath "$arg")''"
             fi
@@ -498,11 +514,11 @@ getContainersFromDefinition() {
         fi
         makeTmpDir
         errEcho "Building containers..."
-        buildContainers "$containerExpr" $tmpDir "$nixosPath"
+        buildContainers "$containerExpr" "$tmpDir" "$nixosPath"
         nixosSystemEtc=$tmpDir/result/etc
 
         if [[ $onlyBuild ]]; then
-            realpath $tmpDir/result
+            realpath "$tmpDir"/result
             exit 0
         fi
     else
@@ -522,27 +538,27 @@ getContainersFromDefinition() {
 
     ## 2. Gather containers
 
-    services=$(echo $nixosSystemEtc/systemd/system/container@?*.service)
-    if [[ ! $services ]]; then
+    services=("$nixosSystemEtc"/systemd/system/container@?*.service)
+    if ((${#services[@]} == 0)); then
         errEcho "No container services in $nixosSystemEtc/systemd/system"
         exit 0
     fi
     allContainers=()
-    for service in $services; do
-        allContainers+=($(getContainerName $service))
+    for service in "${services[@]}"; do
+        allContainers+=("$(getContainerName "$service")")
     done
-    allContainers=($(printf '%s\n' ${allContainers[@]} | sort))
+    mapfile -t allContainers < <(printf '%s\n' "${allContainers[@]}" | sort)
 }
 
 atExit() {
     origExitCode=$?
     set +e
     if [[ $startShellEnv && $destroy ]]; then
-        [[ $runCommand ]] || echo "Destroying container."
-        destroyContainers $shellContainer
+        ((${#runCommand[@]} > 0)) || echo "Destroying container."
+        destroyContainers "$shellContainer"
     fi
     if [[ $tmpDir ]]; then
-        rm -rf $tmpDir
+        rm -rf "$tmpDir"
     fi
     exit $origExitCode
 }
@@ -560,7 +576,7 @@ fi
 #------------------------------------------------------------------------------
 
 if [[ $restart ]]; then
-    restartContainers $*
+    restartContainers "$@"
     exit 0
 fi
 
@@ -597,11 +613,11 @@ destroyContainers() {
         # Signal 'stop' before killing so that the killed container doesn't restart
         local output
         local unitLoaded=1
-        if ! systemctlIgnoreNotLoaded stop --no-block $service; then
+        if ! systemctlIgnoreNotLoaded stop --no-block "$service"; then
             errEcho "Stopping $service failed with: $output"
         fi
         if [[ $unitLoaded ]]; then
-            if ! systemctlIgnoreNotLoaded kill $service; then
+            if ! systemctlIgnoreNotLoaded kill "$service"; then
                 errEcho "Killing $service failed with: $output"
             fi
         fi
@@ -609,27 +625,28 @@ destroyContainers() {
         rm -f "$mutableServicesDir/machines.target.wants/$service"
 
         if [[ -L $serviceFile ]]; then
-            rm $serviceFile
+            rm "$serviceFile"
             needDaemonReload=1
         fi
-        local gcRootsPath=$(makeGCRootsPath $container)
-        rm -f $gcRootsPath
-        rm -f $gcRootsPath.conf
+        local gcRootsPath
+        gcRootsPath=$(makeGCRootsPath "$container")
+        rm -f "$gcRootsPath"
+        rm -f "$gcRootsPath".conf
 
         # Remove declarative container confFile, otherwise `nixos-container` fails
         # with 'cannot destroy declarative container'
-        rm -f $confFile
+        rm -f "$confFile"
         # Create dummy confFile, otherwise `nixos-container` stops before
         # destroying the container completely
-        touch $confFile
+        touch "$confFile"
 
         # Remove immutable attribute from nested container var/empty files so that
         # the container directory can be deleted
-        for varempty in "$stateDirectory"/$container/var/lib/*containers/*/var/empty; do
-            chattr -i $varempty
+        for varempty in "$stateDirectory"/"$container"/var/lib/*containers/*/var/empty; do
+            chattr -i "$varempty"
         done
 
-        nixos-container destroy $container || true
+        nixos-container destroy "$container" || true
     done
     if [[ $needDaemonReload ]]; then
         systemctl daemon-reload
@@ -639,7 +656,7 @@ destroyContainers() {
 if [[ $destroy ]]; then
     if  [[ $1 == --all || $1 == -a ]]; then
         getInstallDirs
-        containers=($(getContainers))
+        mapfile -t containers < <(getContainers)
     # If the first letter of the first arg is one of ./-
     # or no arg is given and EXTRA_CONTAINER_ETC is defined
     elif (($# > 0)) && [[ ${1:0:1} == [./-] ]] || [[ $EXTRA_CONTAINER_ETC ]]; then
@@ -675,19 +692,19 @@ if [[ $shell ]]; then
     fi
     shellContainer=${allContainers[0]}
 
-    [[ $shellContainer == $runningShellContainer ]] && insideContainerShell=1 || insideContainerShell=
+    [[ $shellContainer == "$runningShellContainer" ]] && insideContainerShell=1 || insideContainerShell=
 
-    if [[ $runCommand || ! $insideContainerShell ]]; then
+    if ((${#runCommand[@]} > 0)) || [[ ! $insideContainerShell ]]; then
         startShellEnv=1
     fi
     if [[ $insideContainerShell && ! $forceDestroy ]]; then
         destroy=
     fi
-    if [[ $startShellEnv && ! $runCommand ]]; then
+    if [[ -n $startShellEnv ]] && ((${#runCommand[@]} == 0)); then
         makeStartInterruptible=1
     fi
     if [[ $destroy ]]; then
-        destroyContainers $shellContainer
+        destroyContainers "$shellContainer"
     fi
     start=1
 fi
@@ -695,17 +712,17 @@ fi
 ## 4. Install containers
 
 confWithoutSystem() {
-    sed /^SYSTEM_PATH=/d $1
+    sed /^SYSTEM_PATH=/d "$1"
 }
 
 isContainerUnchanged() {
     [[ -e $serviceDest && \
        -e $confDest && \
-       $(realpath $serviceFile) == $(realpath $serviceDest) ]] || return 1
+       $(realpath "$serviceFile") == $(realpath "$serviceDest") ]] || return 1
 
-    if [[ $(realpath $confFile) != $(realpath $confDest) ]]; then
-        if [[ $(confWithoutSystem $confFile) == $(confWithoutSystem $confDest) ]]; then
-            onlySystemChangedContainers+=($container)
+    if [[ $(realpath "$confFile") != $(realpath "$confDest") ]]; then
+        if [[ $(confWithoutSystem "$confFile") == $(confWithoutSystem "$confDest") ]]; then
+            onlySystemChangedContainers+=("$container")
         fi
         return 1
     fi
@@ -717,7 +734,7 @@ checkInstallationSuccess() {
         # If ExecStart points to the generic 'container_-start' script of the
         # 'container@.service' service template, the installation of the
         # container service file failed.
-        if [[ $(systemctl show -p ExecStart $service) == */bin/container_-start*  ]]; then
+        if [[ $(systemctl show -p ExecStart "$service") == */bin/container_-start*  ]]; then
             errEcho
             errEcho 'Container service installation failed.'
             errEcho 'Please add the following to your NixOS configuration'
@@ -738,18 +755,18 @@ if [[ ! $isNixOS ]]; then createOsReleaseFile; fi
 
 changedContainers=()
 onlySystemChangedContainers=()
-for container in ${allContainers[@]} ; do
+for container in "${allContainers[@]}" ; do
     service=container@$container.service
     serviceFile=$nixosSystemEtc/systemd/system/$service
     serviceDest=$mutableServicesDir/$service
     confFile=$nixosSystemEtc/$configDirectoryName/$container.conf
-    confDest="$configDirectory/$(basename $confFile)"
+    confDest="$configDirectory/$(basename "$confFile")"
 
     if isContainerUnchanged; then
         echo "$container (unchanged, skipped)"
     else
         echo "$container"
-        changedContainers+=($container)
+        changedContainers+=("$container")
 
         if [[ ! -e $confFile ]]; then
             alternativeConfFile=$nixosSystemEtc/$otherConfigDirectoryName/$container.conf
@@ -770,11 +787,11 @@ for container in ${allContainers[@]} ; do
             exit 1
         fi
 
-        ln -sf $(realpath $serviceFile) $serviceDest
-        ln -sf $(realpath $confFile) $confDest
-        gcRootsPath=$(makeGCRootsPath $container)
-        ln -sf $serviceDest $gcRootsPath
-        ln -sf $confDest $gcRootsPath.conf
+        ln -sf "$(realpath "$serviceFile")" "$serviceDest"
+        ln -sf "$(realpath "$confFile")" "$confDest"
+        gcRootsPath=$(makeGCRootsPath "$container")
+        ln -sf "$serviceDest" "$gcRootsPath"
+        ln -sf "$confDest" "$gcRootsPath".conf
 
         if grep -q AUTO_START=1 "$confFile"; then
             wantsDir=$mutableServicesDir/machines.target.wants
@@ -784,9 +801,9 @@ for container in ${allContainers[@]} ; do
     fi
 done
 
-if [[ $changedContainers ]]; then
+if [[ -n "${changedContainers[*]}" ]]; then
     systemctl daemon-reload
-    checkInstallationSuccess ${changedContainers[0]}
+    checkInstallationSuccess "${changedContainers[0]}"
 fi
 
 ## 3. Setup shell
@@ -801,29 +818,36 @@ fi
 handleShell() {
     trap - SIGINT
 
-    export containerIp=$(nixos-container show-ip $shellContainer 2> /dev/null) || containerIp=
+    export containerIp
+    containerIp=$(nixos-container show-ip "$shellContainer" 2> /dev/null) || containerIp=
     export runningShellContainer=$shellContainer
     export containerStateDirectory=$stateDirectory
+    # Exported helpers are invoked by shortcuts in the child shell.
+    # shellcheck disable=SC2329,SC2154
     extraContainerCmd() {
-        if [[ $# > 0 ]]; then
-            nixos-container run $name -- "$@" | cat;
+        if [[ $# -gt 0 ]]; then
+            nixos-container run "$name" -- "$@" | cat;
         else
-            nixos-container root-login $name
+            nixos-container root-login "$name"
         fi
     }
     if [[ $extraContainerSSH ]]; then
         makeTmpDir
         export sshKey
         export sshControlPath=$tmpDir/ssh-connection
+        # Invoked by the exported cssh shortcut.
+        # shellcheck disable=SC2329
         extraContainerSSHCmd() {
-            ssh -i $sshKey -o ConnectTimeout=2 \
+            ssh -i "$sshKey" -o ConnectTimeout=2 \
                 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
                 -o ControlMaster=auto -o ControlPath="$sshControlPath" -o ControlPersist=60 \
-                root@$ip "$@"
+                "root@$ip" "$@"
         }
         export -f extraContainerSSHCmd
 
     fi
+    # Invoked by the exported h shortcut.
+    # shellcheck disable=SC2329
     extraContainerHelp() {
         if [[ $ip ]]; then
             echo "Container address: $ip (\$ip)"
@@ -838,6 +862,8 @@ handleShell() {
     }
     export -f extraContainerCmd extraContainerHelp
 
+    # Variables are expanded when evaluated in the target shell, including name above.
+    # shellcheck disable=SC2016
     defineShortcuts='
       function h() { extraContainerHelp; }
       function c() { extraContainerCmd "$@"; }
@@ -850,7 +876,7 @@ handleShell() {
       export ip=$containerIp
     '
 
-    if [[ $runCommand ]]; then
+    if ((${#runCommand[@]} > 0)); then
         eval "$defineShortcuts"
         echo "Running command."
         "${runCommand[0]}" "${runCommand[@]:1}"
@@ -882,43 +908,45 @@ if [[ $start || $update || $restart ]]; then
     toStart=()
     toRestart=()
     # systemctl is-active fails when some containers are not active
-    statuses=($(systemctl is-active $(getServiceNames ${allContainers[@]}))) || true
-    for i in ${!statuses[@]}; do
+    mapfile -t services < <(getServiceNames "${allContainers[@]}")
+    mapfile -t statuses < <(systemctl is-active "${services[@]}" || true)
+    for i in "${!statuses[@]}"; do
         if [[ ${statuses[$i]} == active ]]; then
-            runningContainers+=(${allContainers[$i]})
+            runningContainers+=("${allContainers[$i]}")
         else
-            toStart+=(${allContainers[$i]})
+            toStart+=("${allContainers[$i]}")
         fi
     done
 
     if [[ $start && ((${#toStart[@]} != 0)) ]]; then
         echo "Starting containers:"
-        printf '%s\n' ${toStart[@]}
+        printf '%s\n' "${toStart[@]}"
         echo
-        systemctl start $(getServiceNames ${toStart[@]})
+        mapfile -t services < <(getServiceNames "${toStart[@]}")
+        systemctl start "${services[@]}"
     fi
 
     # Update or restart changed containers that are running
-    toRestart=($(comm -12 <(printf '%s\n' ${runningContainers[@]} | sort) \
-                          <(printf '%s\n' ${changedContainers[@]})))
+    mapfile -t toRestart < <(comm -12 <(printf '%s\n' "${runningContainers[@]}" | sort) \
+                                    <(printf '%s\n' "${changedContainers[@]}") | sed '/^$/d')
     if ((${#toRestart[@]} != 0)); then
         if [[ ! $restart ]]; then
-            toUpdate=($(comm -12 <(printf '%s\n' ${toRestart[@]}) \
-                                 <(printf '%s\n' ${onlySystemChangedContainers[@]})))
-            toRestart=($(comm -23 <(printf '%s\n' ${toRestart[@]}) \
-                                  <(printf '%s\n' ${toUpdate[@]})))
+            mapfile -t toUpdate < <(comm -12 <(printf '%s\n' "${toRestart[@]}") \
+                                           <(printf '%s\n' "${onlySystemChangedContainers[@]}") | sed '/^$/d')
+            mapfile -t toRestart < <(comm -23 <(printf '%s\n' "${toRestart[@]}") \
+                                            <(printf '%s\n' "${toUpdate[@]}") | sed '/^$/d')
             if ((${#toUpdate[@]} != 0)); then
                 echo "Updating containers:"
-                printf '%s\n' ${toUpdate[@]}
+                printf '%s\n' "${toUpdate[@]}"
                 echo
-                updateContainers ${toUpdate[@]}
+                updateContainers "${toUpdate[@]}"
             fi
         fi
         if ((${#toRestart[@]} != 0)); then
             echo "Restarting containers:"
-            printf '%s\n' ${toRestart[@]}
+            printf '%s\n' "${toRestart[@]}"
             echo
-            restartContainers ${toRestart[@]}
+            restartContainers "${toRestart[@]}"
         fi
     fi
 fi

@@ -1,4 +1,15 @@
+# 0.16 (2026-09-09)
+
+- Fixes
+  - Added to dummy options:
+    `nix.enable`
+    `nix.daemon.enable`
+  - Fixed tests bugs. All tests pass
+  - Shellcheck cleanup on all bash scripts
+  - Format README.md
+
 # 0.15 (2026-04-28)
+
 - Fixes
   - Declare additional dummy options in `eval-config.nix` so containers
     evaluate cleanly against current `nixpkgs-unstable`. Newer
@@ -10,15 +21,21 @@
     `users.groups.utmp.name` at the outer eval level. Replaces the
     leaf-typed `security` and `services.logrotate` dummies with their
     specific child paths so submodule writes are accepted. Fixes #40.
+
 # 0.14 (2025-12-19)
+
 - Enhancements
   - Support NixOS unstable
+
 # 0.13 (2024-12-12)
+
 - Enhancements
   - Support NixOS option `containers.<name>.autoStart`.
     This allows creating containers that are automatically started on system boot.
   - Support NixOS 24.11, NixOS unstable
+
 # 0.12 (2023-06-15)
+
 - Enhancements
   - Flake: Allow accessing built container configs.
     Example:
@@ -28,7 +45,9 @@
   - Add compatibility with NixOS 23.05, NixOS unstable
 - Fixes
   - Fix `extra-container destroy --all` when more than one container is installed
+
 # 0.11 (2022-10-22)
+
 - Enhancements
   - Support building containers via Flakes (see [examples/flake](./examples/flake)).
   - Support destroying containers from container definitions:\
@@ -37,31 +56,43 @@
     `extra-container destroy ./mycontainers.nix`.
 - Fixes
   - Fix incomplete container state directory path in `help()` message
+
 # 0.10 (2022-06-26)
+
 - Enhancements
   - Support NixOS 22.05
+
 # 0.9 (2022-04-11)
+
 - Enhancements
   - Support NixOS unstable
 - Fixes
   - Fix command `destroy` for nested declarative containers
+
 # 0.8 (2021-09-30)
+
 - Enhancements
   - Support NixOS unstable
 - Fixes
   - Fix flake
+
 # 0.7 (2021-08-03)
+
 - Enhancements
   - Support NixOS 21.05 and unstable
   - Add basic [Nix flake](https://nixos.wiki/wiki/Flakes) support
     for installing and developing.\
     `extra-container` itself still uses `nix-build` internally.
+
 # 0.6 (2021-02-05)
+
 - Fixes
   - Add compatibility with current NixOS unstable.
   - `extra.exposeLocalhost`: don't fail when iptables lock can't be obtained immediately.
   - Fix `PATH` not being preserved in container shells.
+
 # 0.5 (2020-11-01)
+
 - Enhancements. (See the [README](README.md) for full documentation.)
   - Add generic support for systemd-based Linux distros.
   - Add command `shell`.
@@ -79,6 +110,7 @@
   - Don't copy local nixpkgs sources provided via `--nixpkgs` to the nix store.
 
 # 0.4 (2020-09-25)
+
 - Enhancements
   - Significantly speed up container evaluation.\
     Use a reduced module set for evaluating the container host system derivation.

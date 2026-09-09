@@ -6,6 +6,11 @@ shopt -s nullglob
 scriptDir="$(dirname "$(readlink -f "$0")")"
 PATH=$scriptDir:$PATH
 
+# Namespace entry and cleanup need root, not just extra-container commands.
+if ((EUID != 0)); then
+    exec sudo env PATH="$PATH" NIX_PATH="${NIX_PATH-}" bash "$scriptDir/run-tests-in-container.sh" "$@"
+fi
+
 cleanup() {
     # clean immutable files inside the container
     for f in /var/lib/*containers/test-extra-container/var/lib/*containers/*/var/empty; do
@@ -16,7 +21,7 @@ cleanup() {
 }
 trap "cleanup" EXIT
 
-trap "echo \"Error at $(realpath ${BASH_SOURCE[0]}):\$LINENO\"" ERR
+trap 'echo "Error at $(realpath "${BASH_SOURCE[0]}"):$LINENO"' ERR
 
 cleanup
 
@@ -28,11 +33,13 @@ extra-container create -s <<EOF
 { config, pkgs, lib, ... }:
 {
   containers.test-extra-container = {
+    # Destroying nested NixOS containers requires clearing var/empty's immutable flag.
+    additionalCapabilities = [ "CAP_LINUX_IMMUTABLE" ];
     bindMounts."/extra-container".hostPath = "$scriptDir";
     bindMounts."/nixpkgs".hostPath = "$nixpkgs";
     config = { options, ... }: {
       environment = {
-        systemPackages = [ pkgs.nixos-container ];
+        systemPackages = [ pkgs.nixos-container pkgs.e2fsprogs ];
         variables.NIX_PATH = lib.mkForce "nixpkgs=/nixpkgs";
       };
       boot = lib.optionalAttrs (options.boot ? extraSystemdUnitPaths) {

@@ -13,7 +13,6 @@ This tool brings you the best of both worlds.
 ## Example
 
 ```bash
-
 sudo extra-container create --start <<'EOF'
 {
   containers.demo = {
@@ -63,7 +62,7 @@ extra-container shell -E "$cfg" --run c hostname # => hello
 
 ## Changelog
 
- [`CHANGELOG.md`](CHANGELOG.md)
+[`CHANGELOG.md`](CHANGELOG.md)
 
 ## Install
 
@@ -74,6 +73,7 @@ extra-container shell -E "$cfg" --run c hostname # => hello
 Add `programs.extra-container.enable = true` to your configuration.
 
 ##### Any NixOS with `flake` support
+
 Import `extra-container.nixosModules.default` in your configuration.
 
 ### On other systemd-based Linux distros
@@ -83,6 +83,7 @@ git clone https://github.com/erikarvstedt/extra-container
 # Calls sudo during install
 extra-container/util/install.sh
 ```
+
 [`install.sh`](util/install.sh) installs `extra-container` to the root nix user profile
 and edits `/etc/sudoers` to enable running `extra-container` with sudo.
 
@@ -94,6 +95,7 @@ Command `shell` starts a container shell session.
 The shell provides helper functions for interacting with the container. The container is destroyed when exiting the shell.
 
 This config uses `extra` options that are [explained below](#private-network-helper).
+
 ```bash
 read -d '' src <<'EOF' || :
 {
@@ -111,6 +113,7 @@ extra-container shell -E "$src" --ssh
 `extra-container` automatically runs itself via `sudo` when called as a non-root user.
 
 An example shell session
+
 ```
 ...
 Starting shell.
@@ -138,6 +141,7 @@ demo
 #### Run commands
 
 Run a command in a shell session and exit. The container is destroyed afterwards.
+
 ```bash
 cfg='{ containers.demo = {}; }'
 extra-container shell -E "$cfg" --run c hostname
@@ -145,12 +149,14 @@ extra-container shell -E "$cfg" --run c hostname
 ```
 
 Start a shell inside the container.
+
 ```bash
 cfg='{ containers.demo = {}; }'
 extra-container shell -E "$cfg" --run c
 ```
 
 #### Repeated calls to `extra-container shell`
+
 When `extra-container shell` detects that it is already running in a container shell
 session, it updates the running container instead of destroying and restarting it and
 starting a new shell.\
@@ -162,17 +168,18 @@ called as a non-root user outside of a shell session.
 To force container destruction inside a shell session, use `extra-container shell --destroy|-d`.
 
 #### Disable auto-destruction
+
 By default, `shell` destroys the shell container before starting and before exiting.
 This ensures that containers start with no leftover filesystem state from
 previous runs and that containers do not consume system resources after use.\
 To disable auto-destructing containers, run
 `extra-container shell --no-destroy|-n`
 
-
 ### Private network helper
 
 Container options `extra.*` are defined by `extra-container` and help with setting up private network containers.\
 See [eval-config.nix](./eval-config.nix) for full option descriptions.
+
 ```nix
 containers.demo = {
   extra = {
@@ -196,6 +203,7 @@ containers.demo = {
 
 `extra-container` appends `pwd` to `NIX_PATH` to allow configs given via `--expr|-E`
 or via stdin to access the working directory.
+
 ```bash
 extra-container create -E '{ imports = [ <pwd/myfile.nix> ]; ... }'
 ```
@@ -205,6 +213,7 @@ extra-container create -E '{ imports = [ <pwd/myfile.nix> ]; ... }'
 See [examples/flake](./examples/flake).
 
 ## Usage
+
 ```
 extra-container create <container-config-file>
                        [--attr|-A attrPath]
@@ -332,22 +341,23 @@ system we can use a reduced module set (`eval-config.nix`) to improve evaluation
 performance.
 
 Now link the container files from the etc derivation to the main system, like so:
+
 ```
 nixos-system/etc/systemd/system/container@CONTAINER.service -> /etc/systemd-mutable/system
 nixos-system/etc/containers/CONTAINER.conf -> /etc/containers       (system.stateVersion < 22.05)
                                            -> /etc/nixos-containers (system.stateVersion ≥ 22.05)
 ```
+
 Finally, add gcroots pointing to the linked files.
 
-
 ## Developing
+
 All contributions and suggestions are welcome, even if they're minor or cosmetic.
 
 ### Development workflow
 
 Run `nix develop` in the project root directory to start a development shell.\
-Within the shell, you can run extra-container from the [local
-source](./extra-container) via command `extra-container`.
+Within the shell, you can run extra-container from the [local source](./extra-container) via command `extra-container`.
 
 When changing the `Usage` documentation in `extra-container`, run `make doc` to copy
 these changes to `README.md`.
@@ -369,8 +379,7 @@ The following tests are executed:
 - VM test
 
   Can be run manually via `nix build .#test`.\
-  This is a basic test using the [NixOS VM test
-  framework](https://github.com/NixOS/nixpkgs/blob/master/nixos/lib/testing-python.nix).
+  This is a basic test using the [NixOS VM test framework](https://github.com/NixOS/nixpkgs/blob/master/nixos/lib/testing-python.nix).
   It is built as a Nix derivation, which makes it independent from the system
   environment.
 

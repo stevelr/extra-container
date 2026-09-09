@@ -53,7 +53,9 @@ let
         networking.extraHosts = dummy;
         networking.proxy.envVars = optionValue { };
         nix.package = optionValue pkgs.nix;
-        nix.enable = optionValue true;
+        nix.enable = optionValue true; # added 2026-09-09
+        nix.daemon.enable = optionValue true; # host nix daemon socket mount. added 2026-09-09
+
         # `security` and `services.logrotate` were previously declared as
         # leaf dummies. Newer nixpkgs `systemd.nix` writes to
         # `security.pam.services` and `services.logrotate.settings`, which
@@ -194,7 +196,7 @@ let
                       default = builtins.getEnv ("extraContainerSSH") == "1";
                       description = ''
                         Enable SSH access with an automatically generated key.
-                        This enables the 'cssh' comand in extra-container shell.
+                        This enables the 'cssh' command in extra-container shell.
 
                         Requires privateNetwork == true.
                       '';

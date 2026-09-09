@@ -6,20 +6,27 @@ shopt -s nullglob
 scriptDir="$(dirname "$(readlink -f "$0")")"
 PATH=$scriptDir:$PATH
 
+# Run cleanup and filesystem assertions with the same privileges as creation.
+if ((EUID != 0)); then
+    exec sudo env PATH="$PATH" NIX_PATH="${NIX_PATH-}" bash "$scriptDir/test.sh" "$@"
+fi
+
 cleanup() {
     set +e
     for container in $(extra-container list | grep ^test-); do
-        extra-container destroy $container
+        extra-container destroy "$container"
     done
     set -e
 }
 trap "cleanup" EXIT
 
-trap "echo \"Error at $(realpath ${BASH_SOURCE[0]}):\$LINENO\"" ERR
+trap 'echo "Error at $(realpath "${BASH_SOURCE[0]}"):$LINENO"' ERR
 
 testMatches() {
     actual="$1"
     expected="$2"
+    # Callers supply glob patterns to match the command output.
+    # shellcheck disable=SC2053
     if [[ $actual != $expected ]]; then
         echo
         echo 'Pattern does not match'
@@ -124,7 +131,7 @@ testMatches "$output" ""
 #―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 echo "Test shell run"
 
-read -d '' src <<EOF || true
+read -r -d '' src <<EOF || true
 { config, pkgs, ... }:
 {
   containers.test-1 = {
@@ -136,7 +143,8 @@ output=$(extra-container shell -E "$src" --run c uname -a)
 testMatches "$output" "*Linux test*"
 
 # Container should be destroyed after running
-[[ ! -e /var/lib/*containers/test-1 ]]
+remainingPaths=(/var/lib/*containers/test-1)
+((${#remainingPaths[@]} == 0))
 
 #―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 echo "Test manual build"
@@ -156,13 +164,13 @@ EOF
 
 testMatches "$storePath" "/nix/store/*"
 
-output=$(extra-container create -s $storePath)
+output=$(extra-container create -s "$storePath")
 testMatches "$output" "*Starting*test-1*test-2*"
 
 #―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
 echo "Test destroy from container definition"
-extra-container destroy $storePath
-[[ ! -e /var/lib/*containers/test-1 ]]
-[[ ! -e /var/lib/*containers/test-2 ]]
+extra-container destroy "$storePath"
+remainingPaths=(/var/lib/*containers/test-1 /var/lib/*containers/test-2)
+((${#remainingPaths[@]} == 0))
 
 # TODO: Add flake tests when flakes have stabilized

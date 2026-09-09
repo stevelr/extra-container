@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+#
 # Usage via `nix run`
 
 #―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
@@ -28,6 +30,8 @@ nix run . # equivalent, because `shell` is used as the default command
 # The container is destroyed afterwards.
 nix run . -- --run c hostname
 nix run . -- shell --run c hostname # equivalent
+# Expand $ip in the shell started by extra-container.
+# shellcheck disable=SC2016
 nix run . -- --run bash -c 'curl --http0.9 $ip:50'
 
 #―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――

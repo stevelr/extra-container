@@ -29,16 +29,16 @@ fi
 
 ## 1. Build extra-container
 tmpDir=$(mktemp -d)
-trap "rm -rf $tmpDir" EXIT
-nix-build --out-link $tmpDir/extra-container -E "(import <nixpkgs> {}).callPackage ''$scriptDir/..'' {}"
+trap 'rm -rf -- "$tmpDir"' EXIT
+nix-build --out-link "$tmpDir/extra-container" -E "(import <nixpkgs> {}).callPackage ''$scriptDir/..'' {}"
 
 ## 2. Install to root user profile
-sudo $(type -P nix-env) -i $tmpDir/extra-container
+sudo "$(type -P nix-env)" -i "$tmpDir/extra-container"
 
 ## 3. Edit /etc/sudoers to enable running extra-container via sudo
 # See ./edit-sudoers.rb for more details
 if ! type -P ruby > /dev/null; then
-    nix-build --out-link $tmpDir/ruby '<nixpkgs>' -A ruby > /dev/null
+    nix-build --out-link "$tmpDir/ruby" '<nixpkgs>' -A ruby > /dev/null
     export PATH="$tmpDir/ruby/bin${PATH:+:}$PATH"
 fi
 
