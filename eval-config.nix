@@ -53,6 +53,7 @@ let
         networking.extraHosts = dummy;
         networking.proxy.envVars = optionValue { };
         nix.package = optionValue pkgs.nix;
+        nix.enable = optionValue true;
         # `security` and `services.logrotate` were previously declared as
         # leaf dummies. Newer nixpkgs `systemd.nix` writes to
         # `security.pam.services` and `services.logrotate.settings`, which
